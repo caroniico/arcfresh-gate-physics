@@ -57,8 +57,8 @@ def test_perpendicular_velocity_uses_local_projection_not_explicit_vector():
     lat = np.array([70.0, 70.0, 70.0, 70.0, 70.0], dtype=float)
     ds = _base_ds(lon, lat, ugos_val=3.0, vgos_val=4.0)
 
-    out = utils.perpendicular_velocity(ds, u_into=1.0, v_into=0.0)
-    # Explicit vector must be ignored in the new workflow.
+    out = utils.perpendicular_velocity(ds)
+    # Local projection: zonal gate → normal is northward → v_perp ≈ vgos
     assert np.allclose(out, ds["vgos"].values, atol=1e-10)
 
 

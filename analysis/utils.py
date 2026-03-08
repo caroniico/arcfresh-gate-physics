@@ -31,7 +31,7 @@ from typing import Optional, Tuple
 SVERDRUP = 1e6       # 1 Sv = 10⁶ m³/s
 DEPTH_CAP = 250.0    # m
 S_REF = 34.8         # PSU
-RHO = 1025.0         # kg/m³
+RHO = 1024.0         # kg/m³
 
 MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -187,55 +187,32 @@ def local_into_arctic_unit_vectors(
     return nx, ny
 
 
-def _projection_components(
-    ds: xr.Dataset,
-    gate_name: Optional[str] = None,
-    u_into: Optional[float] = None,
-    v_into: Optional[float] = None,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Return projection coefficients for ugos and vgos.
-    New contract: always local per-point normals into Arctic side.
-    Legacy inputs are ignored intentionally.
-    """
-    _ = (gate_name, u_into, v_into)  # Explicitly unused in the new workflow
+def _projection_components(ds: xr.Dataset) -> Tuple[np.ndarray, np.ndarray]:
+    """Return (coeff_u, coeff_v) for ugos/vgos → v_perp projection.
+    Always uses local per-point normals oriented toward Arctic side."""
     u_loc, v_loc = local_into_arctic_unit_vectors(ds)
     return u_loc[:, np.newaxis], v_loc[:, np.newaxis]
 
 
-def perpendicular_velocity(
-    ds: xr.Dataset,
-    gate_name: Optional[str] = None,
-    u_into: Optional[float] = None,
-    v_into: Optional[float] = None,
-) -> np.ndarray:
+def perpendicular_velocity(ds: xr.Dataset) -> np.ndarray:
     """
     v_perp = ugos * coeff_u + vgos * coeff_v   [m/s]
     Positive → into Arctic.  Shape: (point, time).
     """
     ugos = ds["ugos"].values
     vgos = ds["vgos"].values
-    coeff_u, coeff_v = _projection_components(
-        ds, gate_name=gate_name, u_into=u_into, v_into=v_into
-    )
+    coeff_u, coeff_v = _projection_components(ds)
     return ugos * coeff_u + vgos * coeff_v
 
 
-def perpendicular_velocity_uncertainty(
-    ds: xr.Dataset,
-    gate_name: Optional[str] = None,
-    u_into: Optional[float] = None,
-    v_into: Optional[float] = None,
-) -> np.ndarray:
+def perpendicular_velocity_uncertainty(ds: xr.Dataset) -> np.ndarray:
     """
     σ_v_perp = √( (σ_u · coeff_u)² + (σ_v · coeff_v)² )   [m/s]
     Shape: (point, time).
     """
     eu = ds["err_ugosa"].values
     ev = ds["err_vgosa"].values
-    coeff_u, coeff_v = _projection_components(
-        ds, gate_name=gate_name, u_into=u_into, v_into=v_into
-    )
+    coeff_u, coeff_v = _projection_components(ds)
     return np.sqrt((eu * coeff_u) ** 2 + (ev * coeff_v) ** 2)
 
 
@@ -246,9 +223,6 @@ def perpendicular_velocity_uncertainty(
 def volume_transport(
     ds: xr.Dataset,
     depth_cap: float = DEPTH_CAP,
-    gate_name: Optional[str] = None,
-    u_into: Optional[float] = None,
-    v_into: Optional[float] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     VT(t) = Σᵢ v_perp(i,t) · min(depth(i), cap) · dx(i)   →  Sverdrups
@@ -258,9 +232,7 @@ def volume_transport(
     vt_sv : (time,)  volume transport in Sv
     time  : pandas DatetimeIndex
     """
-    v_perp = perpendicular_velocity(
-        ds, gate_name=gate_name, u_into=u_into, v_into=v_into
-    )
+    v_perp = perpendicular_velocity(ds)
     depth = np.minimum(ds['depth'].values, depth_cap)  # (pt,)
     dx = ds['dx'].values                               # (pt,)
     # Integrate: sum over points
@@ -276,16 +248,11 @@ def volume_transport(
 def volume_transport_uncertainty(
     ds: xr.Dataset,
     depth_cap: float = DEPTH_CAP,
-    gate_name: Optional[str] = None,
-    u_into: Optional[float] = None,
-    v_into: Optional[float] = None,
 ) -> np.ndarray:
     """
     σ_VT(t) = √( Σᵢ (σ_v_perp(i,t) · H(i) · dx(i))² ) / 1e6   [Sv]
     """
-    sigma_vp = perpendicular_velocity_uncertainty(
-        ds, gate_name=gate_name, u_into=u_into, v_into=v_into
-    )
+    sigma_vp = perpendicular_velocity_uncertainty(ds)
     H = np.minimum(ds['depth'].values, depth_cap)
     dx = ds['dx'].values
     terms = sigma_vp * H[:, None] * dx[:, None]        # (pt, time)
@@ -296,17 +263,12 @@ def volume_transport_uncertainty(
 def volume_transport_per_point(
     ds: xr.Dataset,
     depth_cap: float = DEPTH_CAP,
-    gate_name: Optional[str] = None,
-    u_into: Optional[float] = None,
-    v_into: Optional[float] = None,
 ) -> np.ndarray:
     """
     Transport contribution per gate point per timestep (Sv).
     Shape: (point, time).  Useful for along-gate 4×3 profiles.
     """
-    v_perp = perpendicular_velocity(
-        ds, gate_name=gate_name, u_into=u_into, v_into=v_into
-    )
+    v_perp = perpendicular_velocity(ds)
     H = np.minimum(ds['depth'].values, depth_cap)
     dx = ds['dx'].values
     return v_perp * H[:, None] * dx[:, None] / SVERDRUP
@@ -314,14 +276,9 @@ def volume_transport_per_point(
 
 def volume_transport_per_point_uncertainty(ds: xr.Dataset,
                                            depth_cap: float = DEPTH_CAP,
-                                           gate_name: Optional[str] = None,
-                                           u_into: Optional[float] = None,
-                                           v_into: Optional[float] = None
                                            ) -> np.ndarray:
     """σ of per-point VT (Sv). Shape: (point, time)."""
-    sigma_vp = perpendicular_velocity_uncertainty(
-        ds, gate_name=gate_name, u_into=u_into, v_into=v_into
-    )
+    sigma_vp = perpendicular_velocity_uncertainty(ds)
     H = np.minimum(ds['depth'].values, depth_cap)
     dx = ds['dx'].values
     return sigma_vp * H[:, None] * dx[:, None] / SVERDRUP
@@ -334,9 +291,7 @@ def volume_transport_per_point_uncertainty(ds: xr.Dataset,
 def freshwater_transport(ds: xr.Dataset,
                          depth_cap: float = DEPTH_CAP,
                          s_ref: float = S_REF,
-                         gate_name: Optional[str] = None,
-                         u_into: Optional[float] = None,
-                         v_into: Optional[float] = None) -> Tuple[np.ndarray, np.ndarray]:
+                         ) -> Tuple[np.ndarray, np.ndarray]:
     """
     FW(t) = Σᵢ v_perp(i,t) · (1 − SSS(i,t)/S_ref) · H(i) · dx(i)   [m³/s]
 
@@ -344,9 +299,7 @@ def freshwater_transport(ds: xr.Dataset,
     """
     if 'sss' not in ds:
         raise ValueError("No SSS variable in this NetCDF – FW transport unavailable.")
-    v_perp = perpendicular_velocity(
-        ds, gate_name=gate_name, u_into=u_into, v_into=v_into
-    )
+    v_perp = perpendicular_velocity(ds)
     sss = ds['sss'].values                             # (pt, time)
     H = np.minimum(ds['depth'].values, depth_cap)
     dx = ds['dx'].values
@@ -360,16 +313,12 @@ def freshwater_transport(ds: xr.Dataset,
 def freshwater_transport_uncertainty(ds: xr.Dataset,
                                      depth_cap: float = DEPTH_CAP,
                                      s_ref: float = S_REF,
-                                     gate_name: Optional[str] = None,
-                                     u_into: Optional[float] = None,
-                                     v_into: Optional[float] = None) -> np.ndarray:
+                                     ) -> np.ndarray:
     """
     σ_FW(t) = √( Σᵢ (σ_v_perp · |1 − S/S_ref| · H · dx)² )   [m³/s]
     Only velocity uncertainty propagated (SSS error not included here).
     """
-    sigma_vp = perpendicular_velocity_uncertainty(
-        ds, gate_name=gate_name, u_into=u_into, v_into=v_into
-    )
+    sigma_vp = perpendicular_velocity_uncertainty(ds)
     sss = ds['sss'].values
     H = np.minimum(ds['depth'].values, depth_cap)
     dx = ds['dx'].values
@@ -381,13 +330,9 @@ def freshwater_transport_uncertainty(ds: xr.Dataset,
 def freshwater_transport_per_point(ds: xr.Dataset,
                                     depth_cap: float = DEPTH_CAP,
                                     s_ref: float = S_REF,
-                                    gate_name: Optional[str] = None,
-                                    u_into: Optional[float] = None,
-                                    v_into: Optional[float] = None) -> np.ndarray:
+                                    ) -> np.ndarray:
     """Per-point FW contribution (m³/s). Shape: (point, time)."""
-    v_perp = perpendicular_velocity(
-        ds, gate_name=gate_name, u_into=u_into, v_into=v_into
-    )
+    v_perp = perpendicular_velocity(ds)
     sss = ds['sss'].values
     H = np.minimum(ds['depth'].values, depth_cap)
     dx = ds['dx'].values
@@ -397,13 +342,9 @@ def freshwater_transport_per_point(ds: xr.Dataset,
 def freshwater_transport_per_point_uncertainty(ds: xr.Dataset,
                                                depth_cap: float = DEPTH_CAP,
                                                s_ref: float = S_REF,
-                                               gate_name: Optional[str] = None,
-                                               u_into: Optional[float] = None,
-                                               v_into: Optional[float] = None) -> np.ndarray:
+                                               ) -> np.ndarray:
     """σ of per-point FW (m³/s). Shape: (point, time)."""
-    sigma_vp = perpendicular_velocity_uncertainty(
-        ds, gate_name=gate_name, u_into=u_into, v_into=v_into
-    )
+    sigma_vp = perpendicular_velocity_uncertainty(ds)
     sss = ds['sss'].values
     H = np.minimum(ds['depth'].values, depth_cap)
     dx = ds['dx'].values
@@ -417,9 +358,7 @@ def freshwater_transport_per_point_uncertainty(ds: xr.Dataset,
 def salt_flux(ds: xr.Dataset,
               depth_cap: float = DEPTH_CAP,
               rho: float = RHO,
-              gate_name: Optional[str] = None,
-              u_into: Optional[float] = None,
-              v_into: Optional[float] = None) -> Tuple[np.ndarray, np.ndarray]:
+              ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Sm(t) = Σᵢ ρ · (SSS(i,t)/1000) · v_perp(i,t) · H(i) · dx(i)   [kg/s]
 
@@ -427,9 +366,7 @@ def salt_flux(ds: xr.Dataset,
     """
     if 'sss' not in ds:
         raise ValueError("No SSS variable – salt flux unavailable.")
-    v_perp = perpendicular_velocity(
-        ds, gate_name=gate_name, u_into=u_into, v_into=v_into
-    )
+    v_perp = perpendicular_velocity(ds)
     sss = ds['sss'].values
     H = np.minimum(ds['depth'].values, depth_cap)
     dx = ds['dx'].values
@@ -443,15 +380,11 @@ def salt_flux(ds: xr.Dataset,
 def salt_flux_uncertainty(ds: xr.Dataset,
                           depth_cap: float = DEPTH_CAP,
                           rho: float = RHO,
-                          gate_name: Optional[str] = None,
-                          u_into: Optional[float] = None,
-                          v_into: Optional[float] = None) -> np.ndarray:
+                          ) -> np.ndarray:
     """
     σ_Sm(t) = √( Σᵢ (ρ · S/1000 · σ_v_perp · H · dx)² )   [kg/s]
     """
-    sigma_vp = perpendicular_velocity_uncertainty(
-        ds, gate_name=gate_name, u_into=u_into, v_into=v_into
-    )
+    sigma_vp = perpendicular_velocity_uncertainty(ds)
     sss = ds['sss'].values
     H = np.minimum(ds['depth'].values, depth_cap)
     dx = ds['dx'].values
@@ -462,13 +395,9 @@ def salt_flux_uncertainty(ds: xr.Dataset,
 def salt_flux_per_point(ds: xr.Dataset,
                         depth_cap: float = DEPTH_CAP,
                         rho: float = RHO,
-                        gate_name: Optional[str] = None,
-                        u_into: Optional[float] = None,
-                        v_into: Optional[float] = None) -> np.ndarray:
+                        ) -> np.ndarray:
     """Per-point salt flux (kg/s). Shape: (point, time)."""
-    v_perp = perpendicular_velocity(
-        ds, gate_name=gate_name, u_into=u_into, v_into=v_into
-    )
+    v_perp = perpendicular_velocity(ds)
     sss = ds['sss'].values
     H = np.minimum(ds['depth'].values, depth_cap)
     dx = ds['dx'].values
@@ -478,58 +407,13 @@ def salt_flux_per_point(ds: xr.Dataset,
 def salt_flux_per_point_uncertainty(ds: xr.Dataset,
                                     depth_cap: float = DEPTH_CAP,
                                     rho: float = RHO,
-                                    gate_name: Optional[str] = None,
-                                    u_into: Optional[float] = None,
-                                    v_into: Optional[float] = None) -> np.ndarray:
+                                    ) -> np.ndarray:
     """σ of per-point salt flux (kg/s). Shape: (point, time)."""
-    sigma_vp = perpendicular_velocity_uncertainty(
-        ds, gate_name=gate_name, u_into=u_into, v_into=v_into
-    )
+    sigma_vp = perpendicular_velocity_uncertainty(ds)
     sss = ds['sss'].values
     H = np.minimum(ds['depth'].values, depth_cap)
     dx = ds['dx'].values
     return rho * np.abs(sss / 1000.0) * sigma_vp * H[:, None] * dx[:, None]
-
-
-# ╔════════════════════════════════════════════════════════════════════════╗
-# ║                     MONTHLY AGGREGATION                               ║
-# ╚════════════════════════════════════════════════════════════════════════╝
-
-def monthly_mean(values: np.ndarray, time: pd.DatetimeIndex
-                 ) -> pd.DataFrame:
-    """
-    Compute monthly means from a daily time series.
-
-    Parameters
-    ----------
-    values : 1-D array (n_time,)
-    time   : DatetimeIndex of same length
-
-    Returns
-    -------
-    DataFrame with columns ['date', 'value'] indexed monthly.
-    """
-    df = pd.DataFrame({'value': values}, index=time)
-    return df.resample('MS').mean().dropna()
-
-
-def monthly_climatology(values: np.ndarray, time: pd.DatetimeIndex
-                        ) -> pd.DataFrame:
-    """
-    Climatological monthly mean ± std (all years collapsed).
-
-    Returns DataFrame with columns ['month', 'mean', 'std', 'count'].
-    """
-    df = pd.DataFrame({'value': values, 'month': time.month}, index=time)
-    clim = df.groupby('month')['value'].agg(['mean', 'std', 'count']).reset_index()
-    return clim
-
-
-def annual_mean(values: np.ndarray, time: pd.DatetimeIndex
-                ) -> pd.DataFrame:
-    """Annual means from daily data."""
-    df = pd.DataFrame({'value': values}, index=time)
-    return df.resample('YS').mean().dropna()
 
 
 # ╔════════════════════════════════════════════════════════════════════════╗
@@ -586,10 +470,64 @@ def monthly_along_gate_profile(field: np.ndarray,
 
 
 # ╔════════════════════════════════════════════════════════════════════════╗
-# ║                        ROLLING / FILTER                               ║
+# ║              SALINITY-SOURCE COMPARISON HELPERS                       ║
 # ╚════════════════════════════════════════════════════════════════════════╝
 
-def rolling_mean(values: np.ndarray, window: int = 365) -> np.ndarray:
-    """Simple centred rolling mean (NaN-aware). Returns same length as input."""
-    s = pd.Series(values)
-    return s.rolling(window, center=True, min_periods=window // 2).mean().values
+def salt_flux_with_salinity(ds: xr.Dataset,
+                            sal_var: str,
+                            depth_cap: float = DEPTH_CAP,
+                            rho: float = RHO) -> np.ndarray:
+    """
+    Sm(t) = Σᵢ ρ·(S(i,t)/1000)·v⊥(i,t)·H(i)·dx(i)   [kg/s]
+
+    Like salt_flux() but uses an arbitrary salinity variable name
+    (e.g. 'sss' for CCI or 'psal_isas_surface' for ISAS).
+    Returns 1-D array of length n_time.
+    """
+    v_perp = perpendicular_velocity(ds)
+    sal = ds[sal_var].values
+    H = np.minimum(ds['depth'].values, depth_cap)
+    dx = ds['dx'].values
+    integrand = rho * (sal / 1000.0) * v_perp * H[:, None] * dx[:, None]
+    return np.where(np.all(np.isnan(integrand), axis=0), np.nan,
+                    np.nansum(integrand, axis=0))
+
+
+def freshwater_transport_with_salinity(ds: xr.Dataset,
+                                       sal_var: str,
+                                       depth_cap: float = DEPTH_CAP,
+                                       s_ref: float = S_REF) -> np.ndarray:
+    """
+    FW(t) = Σᵢ v⊥(i,t)·(1 − S(i,t)/S_ref)·H(i)·dx(i)   [m³/s]
+
+    Like freshwater_transport() but uses an arbitrary salinity variable.
+    Returns 1-D array of length n_time.
+    """
+    v_perp = perpendicular_velocity(ds)
+    sal = ds[sal_var].values
+    H = np.minimum(ds['depth'].values, depth_cap)
+    dx = ds['dx'].values
+    integrand = v_perp * (1.0 - sal / s_ref) * H[:, None] * dx[:, None]
+    return np.where(np.all(np.isnan(integrand), axis=0), np.nan,
+                    np.nansum(integrand, axis=0))
+
+
+def salinity_coverage_stats(ds: xr.Dataset, sal_var: str) -> dict:
+    """
+    Compute spatial coverage statistics for a salinity variable.
+
+    Returns dict with keys:
+        n_pts, pts_with_data, mean_coverage_pct, overall_pct, smin, smax
+    """
+    sal = ds[sal_var].values                           # (point, time)
+    n_pts = sal.shape[0]
+    pts_with_data = int(np.sum(np.any(np.isfinite(sal), axis=1)))
+    frac_per_t = np.mean(np.isfinite(sal), axis=0)
+    mean_cov = float(np.nanmean(frac_per_t)) * 100
+    overall = float(np.sum(np.isfinite(sal))) / sal.size * 100
+    finite = sal[np.isfinite(sal)]
+    smin = float(finite.min()) if len(finite) > 0 else np.nan
+    smax = float(finite.max()) if len(finite) > 0 else np.nan
+    return dict(n_pts=n_pts, pts_with_data=pts_with_data,
+                mean_coverage_pct=mean_cov, overall_pct=overall,
+                smin=smin, smax=smax)

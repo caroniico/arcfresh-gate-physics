@@ -2,8 +2,11 @@
 """
 Export monthly Salt-mass and Freshwater transports for all ARCFRESH gates.
 
-Output CSV layout mirrors the consortium spreadsheet:
-  Year | Month | Sm | SmU | Fw | FwU | ... (×35 gate-columns)
+Output CSV layout mirrors the consortium spreadsheet "Ocean Gates" sheet:
+  Separator: ;  (semicolon)
+  Encoding:  UTF-8 with BOM
+  Line endings: CRLF (Windows)
+  Year ; Month ; Sm ; SmU ; Fw ; FwU ; ... (×35 gate-columns)
 
 Salinity source (NO fallback / NO mixing between sources):
   - 2010–2023 → CCI SSS v5.5  (variable 'sss')
@@ -14,9 +17,15 @@ If the chosen source has no finite data for a gate → NaN (no fallback).
 Uncertainty is propagated from CMEMS velocity errors only:
   σ_v⊥(i,t) = √((err_ugosa·u_loc)² + (err_vgosa·v_loc)²)
 
-Units in CSV:
-  Sm, SmU  → kg/s
-  Fw, FwU  → Sv  (10⁶ m³/s)
+Consortium definitions & assumptions:
+  ρ            = 1024 kg/m³
+  S_ref        = 34.8 PSU  [10⁻³ kg/kg]
+  Salt mass    = ρ · (S/1000) · v⊥ · H · dx                           [kg/s]
+  Freshwater   = v⊥ · (1 − S/S_ref) · H · dx                         [m³/s → Sv]
+
+Units in CSV (consortium spreadsheet):
+  Sm, SmU  → kg/s        (kilogram per second)
+  Fw, FwU  → Sv          (1 million m³ per second)
 
 Positive transport = flow into the basin (Arctic side).
 
@@ -55,7 +64,7 @@ OUTPUT_PATH = PROJECT_ROOT / "analysis" / "arcfresh_monthly_transports.csv"
 
 DEPTH_CAP = 250.0   # m
 S_REF     = 34.8     # PSU
-RHO       = 1025.0   # kg/m³
+RHO       = 1024.0   # kg/m³
 
 # Period covered
 YEAR_START = 2002
@@ -91,55 +100,62 @@ GATE_FILES: dict[str, str | list[str]] = {
 }
 
 # ── Spreadsheet column order (35 gate-slots) ─────────────────────────────
-# Each entry: (gate_id, sign_flip)
+# Matches exactly the consortium spreadsheet "Ocean Gates" sheet.
+# Each entry: (region, display_name, gate_id, sign_flip)
 #   sign_flip = False  → keep original sign (flow INTO Arctic side)
 #   sign_flip = True   → negate (same gate seen from opposite basin)
 #
-# Regions:                                            gate_id               flip?
+# Separator: ;  |  Line endings: CRLF  |  BOM UTF-8
+# Cell A1 = "Ocean Gates"
+#
 COLUMN_ORDER: list[tuple[str, str, str, bool]] = [
-    # ── Arctic Ocean (external boundaries) ──
+    # ── Arctic Ocean (external boundaries)  — 5 gate-slots ──
     ("Arctic Ocean (external boundaries)", "Fram Strait",              "fram_strait",          False),
     ("Arctic Ocean (external boundaries)", "Bering Strait",            "bering_strait",        False),
-    ("Arctic Ocean (external boundaries)", "Davis Strait",             "davis_strait",         False),
+    ("Arctic Ocean (external boundaries)", "Davies Strait",            "davis_strait",         False),
     ("Arctic Ocean (external boundaries)", "Barents Sea Opening",      "barents_opening",      False),
-    # ── Barents Sea ──
-    ("Barents Sea",                        "Barents Sea Opening",      "barents_opening",      True ),  # = −(external view)
-    ("Barents Sea",                        "Barents Sea – CAO",        "barents_sea_cao",      False),
-    ("Barents Sea",                        "Barents Sea – Kara Sea",   "barents_sea_kara_sea", False),
-    # ── Kara Sea ──
-    ("Kara Sea",                           "Kara Sea – Barents Sea",   "barents_sea_kara_sea", True ),
-    ("Kara Sea",                           "Kara Sea – CAO",           "kara_sea_cao",         False),
-    ("Kara Sea",                           "Kara Sea – Laptev Sea",    "kara_sea_laptev_sea",  False),
-    # ── Laptev Sea ──
-    ("Laptev Sea",                         "Laptev Sea – Kara Sea",    "kara_sea_laptev_sea",  True ),
-    ("Laptev Sea",                         "Laptev Sea – CAO",         "laptev_sea_cao",       False),
-    ("Laptev Sea",                         "Laptev Sea – ESS",         "laptev_sea_ess",       False),
-    # ── East Siberian Seas (ESS) ──
-    ("East Siberian Seas (ESS)",           "ESS – Laptev Sea",         "laptev_sea_ess",       True ),
-    ("East Siberian Seas (ESS)",           "ESS – CAO",               "ess_cao",              False),
-    ("East Siberian Seas (ESS)",           "ESS – Beaufort Sea",       "ess_beaufort_sea",     False),
-    # ── Beaufort Sea ──
-    ("Beaufort Sea",                       "Beaufort Sea – ESS",       "ess_beaufort_sea",     True ),
-    ("Beaufort Sea",                       "Beaufort Sea – CAO",       "beaufort_sea_cao",     False),
-    ("Beaufort Sea",                       "Beaufort Sea – CAA",       "beaufort_sea_caa",     False),
-    # ── Canadian Arctic Archipelago (CAA) ──
-    ("Canadian Arctic Archipelago (CAA)",  "CAA – Beaufort Sea",       "beaufort_sea_caa",     True ),
-    ("Canadian Arctic Archipelago (CAA)",  "CAA – CAO",               "caa_cao",              False),
+    ("Arctic Ocean (external boundaries)", "Bering Strait",            "bering_strait",        True ),   # duplicate in consortium
+    # ── Barents Sea  — 3 gate-slots ──
+    ("Barents Sea",                        "Barents Sea \u2013 CAO",   "barents_sea_cao",      False),
+    ("Barents Sea",                        "Barents Sea \u2013 Kara Sea", "barents_sea_kara_sea", False),
+    ("Barents Sea",                        "Barents Sea Opening",      "barents_opening",      True ),
+    # ── Kara Sea  — 3 gate-slots ──
+    ("Kara Sea",                           "Kara Sea \u2013 Barents Sea", "barents_sea_kara_sea", True ),
+    ("Kara Sea",                           "Kara Sea - CAO",           "kara_sea_cao",         False),
+    ("Kara Sea",                           "Kara Sea - Laptev Sea",    "kara_sea_laptev_sea",  False),
+    # ── Laptev Sea  — 3 gate-slots ──
+    ("Laptev Sea",                         "Laptev Sea - Kara Sea",    "kara_sea_laptev_sea",  True ),
+    ("Laptev Sea",                         "Laptev Seas - CAO",        "laptev_sea_cao",       False),
+    ("Laptev Sea",                         "Laptev Sea - ESS",         "laptev_sea_ess",       False),
+    # ── East Siberian Seas (ESS)  — 3 gate-slots ──
+    ("East Siberian Seas (ESS)",           "ESS - Laptev Sea",         "laptev_sea_ess",       True ),
+    ("East Siberian Seas (ESS)",           "ESS - CAO",               "ess_cao",              False),
+    ("East Siberian Seas (ESS)",           "ESS - Beaufort Sea",       "ess_beaufort_sea",     False),
+    # ── Beaufort Sea  — 3 gate-slots ──
+    ("Beaufort Sea",                       "Beaufort Sea - ESS",       "ess_beaufort_sea",     True ),
+    ("Beaufort Sea",                       "Beaufort Sea - CAO",       "beaufort_sea_cao",     False),
+    ("Beaufort Sea",                       "Beaufort Sea - CAA",       "beaufort_sea_caa",     False),
+    # ── Canadian Arctic Archipelago (CAA)  — 5 gate-slots ──
+    ("Canadian Arctic Archipelago (CAA)",  "CAA - Beaufort Sea",       "beaufort_sea_caa",     True ),
+    ("Canadian Arctic Archipelago (CAA)",  "CAA - CAO",               "caa_cao",              False),
     ("Canadian Arctic Archipelago (CAA)",  "Lancaster Sound",          "lancaster_sound",      False),
     ("Canadian Arctic Archipelago (CAA)",  "Jones Sound",              "jones_sound",          False),
     ("Canadian Arctic Archipelago (CAA)",  "Nares Strait",             "nares_strait",         False),
-    # ── Baffin Bay ──
+    # ── Baffin Bay  — 4 gate-slots ──
     ("Baffin Bay",                         "Lancaster Sound",          "lancaster_sound",      True ),
     ("Baffin Bay",                         "Jones Sound",              "jones_sound",          True ),
     ("Baffin Bay",                         "Nares Strait",             "nares_strait",         True ),
-    ("Baffin Bay",                         "Davis Strait",             "davis_strait",         True ),
-    # ── Central Arctic Ocean (CAO) ──
-    ("Central Arctic Ocean (CAO)",         "CAO – Barents Sea",        "barents_sea_cao",      True ),
-    ("Central Arctic Ocean (CAO)",         "CAO – Kara Sea",           "kara_sea_cao",         True ),
-    ("Central Arctic Ocean (CAO)",         "CAO – Laptev Sea",         "laptev_sea_cao",       True ),
-    ("Central Arctic Ocean (CAO)",         "CAO – ESS",               "ess_cao",              True ),
-    ("Central Arctic Ocean (CAO)",         "CAO – Beaufort Sea",       "beaufort_sea_cao",     True ),
-    ("Central Arctic Ocean (CAO)",         "CAO – CAA",               "caa_cao",              True ),
+    ("Baffin Bay",                         "Davies Strait",            "davis_strait",         True ),
+    # ── Central Arctic Ocean (CAO)  — 6 gate-slots ──
+    ("Central Arctic Ocean (CAO)",         "CAO - Barents Sea",        "barents_sea_cao",      True ),
+    ("Central Arctic Ocean (CAO)",         "CAO - Kara Sea",           "kara_sea_cao",         True ),
+    ("Central Arctic Ocean (CAO)",         "CAO - Laptev Sea",         "laptev_sea_cao",       True ),
+    ("Central Arctic Ocean (CAO)",         "CAO - ESS",               "ess_cao",              True ),
+    ("Central Arctic Ocean (CAO)",         "CAO - Beaufort Sea",       "beaufort_sea_cao",     True ),
+    ("Central Arctic Ocean (CAO)",         "CAO - CAA",               "caa_cao",              True ),
+    # ── Additional gates (not in Sara's consortium sheet) ──
+    ("Additional",                         "Denmark Strait",           "denmark_strait",       False),
+    ("Additional",                         "Norwegian Boundary",       "norwegian_boundary",   False),
 ]
 
 
@@ -398,9 +414,9 @@ def main():
         result[f"{prefix}_Fw"]  = merged["Fw"]  * sign
         result[f"{prefix}_FwU"] = merged["FwU"]          # uncertainty always positive
 
-    # ── Write CSV ─────────────────────────────────────────────────────────
+    # ── Write CSV (consortium format: ; separator, BOM UTF-8, CRLF) ─────
     # Build multi-level header rows
-    header_row1 = ["", ""]   # Year, Month
+    header_row1 = ["Ocean Gates", ""]   # A1 = "Ocean Gates"
     header_row2 = ["", ""]
     header_row3 = ["Year", "Month"]
 
@@ -412,10 +428,13 @@ def main():
     # Data columns (skip Year, Month from result for body)
     data_cols = [c for c in result.columns if c not in ("Year", "Month")]
 
-    with open(OUTPUT_PATH, "w") as f:
-        f.write(",".join(header_row1) + "\n")
-        f.write(",".join(header_row2) + "\n")
-        f.write(",".join(header_row3) + "\n")
+    SEP = ";"
+    CRLF = "\r\n"
+
+    with open(OUTPUT_PATH, "w", encoding="utf-8-sig", newline="") as f:
+        f.write(SEP.join(header_row1) + CRLF)
+        f.write(SEP.join(header_row2) + CRLF)
+        f.write(SEP.join(header_row3) + CRLF)
 
         for _, row in result.iterrows():
             vals = [str(int(row["Year"])), str(int(row["Month"]))]
@@ -425,7 +444,7 @@ def main():
                     vals.append("")
                 else:
                     vals.append(f"{v:.6g}")
-            f.write(",".join(vals) + "\n")
+            f.write(SEP.join(vals) + CRLF)
 
     n_rows = len(result)
     n_cols = len(data_cols) + 2
