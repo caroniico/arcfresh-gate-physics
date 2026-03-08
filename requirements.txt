@@ -1,0 +1,25 @@
+# ARCFRESH Gate Physics — Python dependencies
+# Install: python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+
+# Core scientific stack
+numpy
+pandas
+xarray
+scipy
+
+# NetCDF I/O
+netCDF4
+h5netcdf
+
+# Plotting (Plotly-first, as per project convention)
+plotly
+
+# Geospatial
+geopandas
+
+# Jupyter / interactive notebook
+ipykernel
+jupyter
+
+# Testing
+pytest
