@@ -27,3 +27,20 @@
 | SSS [PSU] | 31.9411 | 31.9411 | 1.36534 | 1.36534 | 0 | 0 | 217307 |
 | SSS coverage [%] | 29.3968 | 29.3968 | nan | nan | 0 | 0 | 739220 |
 
+
+---
+
+## Update 2026-03-08: Formal Verification Complete
+
+A bit-level comparison of all 19 common gate files confirmed:
+
+| Category | Count | Details |
+|----------|-------|---------|
+| **Bit-identical** (same variables) | 9 gates | barents_opening, bering_strait, davis_strait, denmark_strait, fram_strait, jones_sound, lancaster_sound, nares_strait, norwegian_boundary |
+| **Shared vars identical** | 10 gates | All shared variables (ugos, vgos, err_*, depth, dx, x_km, lon, lat) are bit-identical. OLD has `theta` (removed in NEW). NEW adds `psal_isas_surface`, `sss`, `sss_random_error`. |
+| **x_km float noise** | 3 gates | barents_sea_kara_sea, caa_cao, kara_sea_cao — differences at ~10⁻¹⁴ level (zero impact) |
+| **Only in OLD** | ess_cao | Single 192 MB file; NEW has yearly split files |
+
+**Conclusion**: The OLD dataset (`/Users/nicolocaron/Desktop/ARCFRESH/netcdf/`) is **fully redundant**. All analysis should use the NEW directory (`/Users/nicolocaron/Desktop/ARCFRESH/NETCDF CODE/`) exclusively.
+
+The old/new comparison code has been removed from the analysis notebook.
