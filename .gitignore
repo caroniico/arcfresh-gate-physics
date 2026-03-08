@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (large files — keep locally, don't commit)
+*.nc
+*.pkl
+*.zip
+data/
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
